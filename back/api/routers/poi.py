@@ -2,26 +2,15 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 
-from back.db.mock_data.poi import MOCK_INVENTORY, MOCK_POIS, get_poi_or_404
 from back.schemas.enums.poi import POICategory, POITag
-from back.schemas.models.poi import InventoryStatus, PoiItem, PoiSearchResponse, PoiStatusResponse
+from back.schemas.models.poi import PoiSearchResponse, PoiStatusResponse
+from back.services.poi_service import get_poi_status as get_poi_status_service
+from back.services.poi_service import search_pois as search_pois_service
 
 
 router = APIRouter(prefix="/api/v1/poi", tags=["poi"])
-
-
-def build_status_hint(inventory: InventoryStatus, party_size: int) -> str:
-    """把库存字段转成 Agent 易理解的自然语言提示。"""
-
-    if not inventory.is_bookable:
-        return "当前不可预订，建议选择其他时间或替代 POI。"
-    if inventory.remaining_capacity < party_size:
-        return "剩余容量不足，无法满足当前人数。"
-    if inventory.estimated_wait_time > 30:
-        return "可预订但等待时间较长，建议作为备选方案。"
-    return "当前状态良好，适合加入行程计划。"
 
 
 @router.get(
@@ -44,21 +33,14 @@ async def search_pois(
         ),
     ),
 ) -> PoiSearchResponse:
-    """遍历 MOCK_POIS，根据输入 tags 和 POI 标签的交集进行过滤。"""
+    """根据位置、业态和语义标签搜索 POI 候选。"""
 
-    required_tags = set(tags or [])
-
-    # Mock 版本不做真实地理围栏过滤，保留 location/radius 是为了让接口形态贴近真实搜索服务。
-    matched_pois: List[PoiItem] = []
-    for poi in MOCK_POIS:
-        if category is not None and poi.category != category:
-            continue
-        if required_tags and not (required_tags & set(poi.tags)):
-            continue
-        matched_pois.append(poi)
-
-    # 如果没有传入 category 和 tags，则默认返回全部 POI，便于 Agent 在探索阶段获取候选池。
-    return PoiSearchResponse(total=len(matched_pois), items=matched_pois)
+    return await search_pois_service(
+        location=location,
+        radius=radius,
+        category=category,
+        tags=tags,
+    )
 
 
 @router.get(
@@ -73,19 +55,8 @@ async def get_poi_status(
 ) -> PoiStatusResponse:
     """根据 poi_id 查询排队、等待时间和可预订状态。"""
 
-    get_poi_or_404(poi_id)
-    inventory = MOCK_INVENTORY.get(poi_id)
-    if inventory is None:
-        raise HTTPException(status_code=404, detail=f"库存状态不存在: {poi_id}")
-
-    effective_bookable = inventory.is_bookable and inventory.remaining_capacity >= party_size
-    return PoiStatusResponse(
+    return await get_poi_status_service(
         poi_id=poi_id,
         party_size=party_size,
         target_time=target_time,
-        is_bookable=effective_bookable,
-        current_queue_length=inventory.current_queue_length,
-        estimated_wait_time=inventory.estimated_wait_time,
-        remaining_capacity=inventory.remaining_capacity,
-        status_hint=build_status_hint(inventory, party_size),
     )

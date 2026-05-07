@@ -3,9 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Query
 
 from back.schemas.enums.route import TravelMode
-from back.schemas.models.common import Coordinate
 from back.schemas.models.route import RouteEstimateResponse
-from back.utils.geo_utils import calculate_distance_meters, estimate_duration_minutes
+from back.services.route_service import estimate_route as estimate_route_service
 
 
 router = APIRouter(prefix="/api/v1/route", tags=["route"])
@@ -25,13 +24,10 @@ async def estimate_route(
 ) -> RouteEstimateResponse:
     """使用经纬度距离和固定速度进行 Mock 路线估算。"""
 
-    distance_meters = calculate_distance_meters(origin_lat, origin_lng, dest_lat, dest_lng)
-    duration_minutes = estimate_duration_minutes(distance_meters, travel_mode)
-
-    return RouteEstimateResponse(
-        origin=Coordinate(lat=origin_lat, lng=origin_lng),
-        destination=Coordinate(lat=dest_lat, lng=dest_lng),
+    return await estimate_route_service(
+        origin_lat=origin_lat,
+        origin_lng=origin_lng,
+        dest_lat=dest_lat,
+        dest_lng=dest_lng,
         travel_mode=travel_mode,
-        distance_meters=distance_meters,
-        duration_minutes=duration_minutes,
     )

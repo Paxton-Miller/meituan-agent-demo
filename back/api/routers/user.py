@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from back.db.mock_data.user import MOCK_USER_CONTEXT
 from back.schemas.models.user import UserContextResponse
+from back.services.user_service import get_user_context as get_user_context_service
 
 
 router = APIRouter(prefix="/api/v1/user", tags=["user"])
@@ -17,4 +17,4 @@ router = APIRouter(prefix="/api/v1/user", tags=["user"])
 async def get_user_context() -> UserContextResponse:
     """返回 Mock 的当前位置、家庭住址与用户偏好。"""
 
-    return UserContextResponse(**MOCK_USER_CONTEXT)
+    return await get_user_context_service()

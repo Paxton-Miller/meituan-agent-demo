@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import time
 from typing import Dict
+from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from back.api.routers import booking, poi, route, user
+from back.api.routers import booking, poi, route, tools, user
+from back.services.errors import ServiceError
 
 
 app = FastAPI(
@@ -31,6 +34,19 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next):
+    """Attach production-style tracing headers without changing API payloads."""
+
+    request_id = request.headers.get("X-Request-ID", uuid4().hex)
+    started_at = time.perf_counter()
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    elapsed_ms = round((time.perf_counter() - started_at) * 1000, 2)
+    response.headers["X-Process-Time-Ms"] = str(elapsed_ms)
+    return response
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(_, exc: RequestValidationError) -> JSONResponse:
     """将 FastAPI/Pydantic 参数校验错误转换为统一 JSON 格式。"""
@@ -51,6 +67,16 @@ async def http_exception_handler(_, exc: HTTPException) -> JSONResponse:
     )
 
 
+@app.exception_handler(ServiceError)
+async def service_exception_handler(_, exc: ServiceError) -> JSONResponse:
+    """Map domain errors consistently for REST callers and agent tool gateways."""
+
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"code": exc.status_code, "msg": exc.message},
+    )
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(_, exc: Exception) -> JSONResponse:
     """兜底异常处理，避免未捕获错误暴露堆栈信息给调用方。"""
@@ -65,6 +91,7 @@ app.include_router(user.router)
 app.include_router(route.router)
 app.include_router(poi.router)
 app.include_router(booking.router)
+app.include_router(tools.router)
 
 
 @app.get("/", summary="服务健康检查")
